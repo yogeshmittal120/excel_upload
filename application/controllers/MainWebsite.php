@@ -35,6 +35,11 @@ class MainWebsite extends CI_Controller
 
 	public function excel_reader()
 	{
+		if (empty($_FILES['sample_file']['tmp_name'])) {
+			$this->session->set_flashdata('error', "Please Choose file");
+			redirect(__CLASS__);
+		}
+
 		$file = $_FILES['sample_file']['tmp_name'];
 		$filename = $_FILES['sample_file']['name'];
 		$extension = pathinfo($filename, PATHINFO_EXTENSION);
@@ -42,21 +47,17 @@ class MainWebsite extends CI_Controller
 		if (!empty($extension)) {
 			if ($extension != 'csv' && $extension != 'xlsx' && $extension != 'XLSX') {
 				$this->session->set_flashdata("error", "System Error, Only CSV and Xlsx files are allowed.");
-				redirect(base_url('MainWebsite/'));
+				redirect(__CLASS__);
 			}
 		}
 		if (!is_readable($file)) {
 			$this->session->set_flashdata('error', "File is not readable.");
-			redirect(base_url('MainWebsite/'));
+			redirect(__CLASS__);
 		}
 
 		$objPHPExcel = PHPExcel_IOFactory::load($file);
 		//get only the Cell Collection
 
-		echo "<pre>";
-
-
-		$array = array();
 		//extract to a PHP readable array format
 		foreach ($objPHPExcel->getWorksheetIterator() as $key => $worksheet) {
 
@@ -71,106 +72,144 @@ class MainWebsite extends CI_Controller
 		}
 
 		$data = $this->excel_data($arr_data);
-		// print_r($data);
-		// $process_id='';
-		$processes=$this->get_all_unique($data[0],'process');
-		
-		
-		foreach($processes as $key=>$value){
-			$res=$this->Audit_model->find_process_id('tbl_process','process_name',$value);
-			$next_id=0;
-			if($res){
-				$next_id=$res[0]['process_id'];
+
+		// get all unique processes
+		$processes = $this->get_all_unique($data[0], 'process');
+
+		// iterate processes
+		foreach ($processes as $key => $value) {
+			$count = 0;
+			if (!empty($value)) {
+				// find process exist or not
+				$res = $this->Audit_model->find_process_id('tbl_process', 'process_name', $value);
+				// initialize 0 for id of find process record
+				$next_id = 0;
+				if ($res) {
+					// id save 
+					$next_id = $res[0]['process_id'];
+				} else {
+					// if not found then save process
+					$next_id = $this->Audit_model->getNewIDorNo('p', 'tbl_process');
+					$tbl_data = array('process_name' => $value, 'status' => 0, 'process_id' => $next_id);
+					$this->Audit_model->insertData('tbl_process', $tbl_data);
+				}
+
+				///////////////scope/////////////////////////////
+				// find scopes for each process
+				$scope = $this->get_data_by_filter($data['0'], $value, 'process');
+				// find unique scope
+				$unique_scope = $this->get_all_unique($scope, 'scope');
+				// iterate scope
+				foreach ($unique_scope as $key => $sc) {
+					// make a condition array
+					$condition = array('sub_process_name' => $sc, 'process_id' => $next_id);
+					$next_sub_process_id = 0;
+					// check the data exist already or not 
+					$res = $this->Audit_model->select_table_Where_data('tbl_sub_process', $condition);
+
+					if ($res) {
+						// if added then save id
+						$next_sub_process_id = $res[0]['sub_process_id'];
+					} else {
+						// otherwise add new scope
+						$next_sub_process_id = $this->Audit_model->getNewIDorNo('sp', 'tbl_sub_process');
+						$tbl_data = array('sub_process_name' => $sc, 'status' => 0, 'process_id' => $next_id, 'sub_process_id' => $next_sub_process_id);
+						$this->Audit_model->insertData('tbl_sub_process', $tbl_data);
+					}
+
+
+					/////////////////Data Required/////////////////
+					// filter those records which mach with process and scope
+					$Data_required = $this->get_data_by_multiple_column_filter($data['0'], [$value, $sc], ['process', 'scope']);
+
+					// find unique records of data required		
+					$Data_required = $this->get_all_unique($Data_required, 'Data_required');
+					// iterate unique records
+					foreach ($Data_required as $key => $dr) {
+						// make a condition array
+						$condition = array('data_required' => $dr, 'sub_process_id' => $next_sub_process_id);
+						// check the data exist already or not 
+						$res = $this->Audit_model->select_table_Where_data('tbl_data_required', $condition);
+						if ($res) {
+							// if added then save id
+							$next_Data_required_id = $res[0]['id'];
+						} else {
+							// otherwise add new data required
+							$tbl_data = array('data_required' => $dr, 'status' => 0, 'sub_process_id' => $next_sub_process_id);
+							$this->Audit_model->insertData('tbl_data_required', $tbl_data);
+						}
+					}
+
+					//////////////////work steps//////////////
+					// filter those records which mach with process and scope
+					$workSteps = $this->get_data_by_multiple_column_filter($data['0'], [$value, $sc], ['process', 'scope']);
+					// find unique records of work step name	
+					$step_name = $this->get_all_unique($workSteps, 'step_name');
+					// iterate unique records
+					foreach ($step_name as $key => $sn) {
+						// make a condition array
+						$condition = array('steps_name' => $sn, 'sub_process_id' => $next_sub_process_id);
+						// check the data exist already or not
+						$res = $this->Audit_model->select_table_Where_data('tbl_work_steps', $condition);
+						if ($res) {
+							// if added then save id
+							$next_step_name_id = $res[0]['work_seteps_id'];
+						} else {
+							// otherwise add new data required
+							$tbl_data = array('steps_name' => $sn, 'status' => 0, 'sub_process_id' => $next_sub_process_id);
+							$this->Audit_model->insertData('tbl_work_steps', $tbl_data);
+						}
+					}
+
+					///////////////////Risk /////////////
+
+					// filter those records which mach with process and scope
+					$risk = $this->get_data_by_multiple_column_filter($data['0'], [$value, $sc], ['process', 'scope']);
+					// find unique records of work step name
+					$risk_name = $this->get_all_unique($risk, 'risk_name');
+					// iterate unique records
+					foreach ($risk_name as $key => $rn) {
+						// make a condition array
+						$condition = array('risk_name' => $rn, 'sub_process_id' => $next_sub_process_id);
+						// check the data exist already or not
+						$res = $this->Audit_model->select_table_Where_data('tbl_risk', $condition);
+
+						if ($res) {
+							// if added then save id
+							$next_step_name_id = $res[0]['risk_id'];
+						} else {
+							// otherwise add new data required
+							$tbl_data = array('risk_name' => $rn, 'sub_process_id' => $next_sub_process_id);
+							$this->Audit_model->insertData('tbl_risk', $tbl_data);
+						}
+					}
+				}
+			} else {
+				$count++;
 			}
-			else{
-				
-				$next_id=$this->Audit_model->getNewIDorNo('p','tbl_process');
-				$tbl_data=array('process_name'=>$value,'status'=>0,'process_id'=>$next_id);
-				$this->Audit_model->insertData('tbl_process',$tbl_data);		
-			}
-			////////////////////////////////////////////
-			$sub_process=$this->get_data_by_filter($data['0'],$value,'process');
-			$scope=$this->get_all_unique($sub_process,'scope');
-			foreach($scope as $key=>$value){
-				$condition=array('sub_process_name'=>$value,'process_id'=>$next_id);
-				$next_sub_process_id=0;
-				$res=$this->Audit_model->select_table_Where_data('tbl_sub_process',$condition);
-				if($res){
-					$next_sub_process_id=$res[0]['sub_process_id'];
-				}
-				else{
-					$next_sub_process_id=$this->Audit_model->getNewIDorNo('sp','tbl_sub_process');
-					$tbl_data=array('sub_process_name'=>$value,'status'=>0,'process_id'=>$next_id,'sub_process_id'=>$next_sub_process_id);
-					$this->Audit_model->insertData('tbl_sub_process',$tbl_data);
-				}
-				//////////////////////////////////
-				$data_required=$this->get_data_by_filter($data['0'],$value,'scope');
-				$Data_required=$this->get_all_unique($data_required,'Data_required');
-				
-				foreach($Data_required as $key=>$value){
-					$condition=array('data_required'=>$value,'sub_process_id'=>$next_sub_process_id);
-					$next_Data_required_id=0;
-					$res=$this->Audit_model->select_table_Where_data('tbl_data_required',$condition);
-					if($res){
-						$next_Data_required_id=$res[0]['id'];
-					}
-					else{
-						// $next_sub_process_id=$this->Audit_model->getNewIDorNo('sp','tbl_data_required');
-						$tbl_data=array('data_required'=>$value,'status'=>0,'sub_process_id'=>$next_sub_process_id);
-						$this->Audit_model->insertData('tbl_data_required',$tbl_data);
-					}
-
-				}
-				////////////////////////////////
-				// $stepName=$this->get_data_by_filter($data['0'],$value,'scope');
-				$step_name=$this->get_all_unique($data_required,'step_name');
-				print_r($step_name);
-				foreach($step_name as $key=>$value){
-					$condition=array('steps_name'=>$value,'sub_process_id'=>$next_sub_process_id);
-					$next_step_name_id=0;
-					$res=$this->Audit_model->select_table_Where_data('tbl_work_steps',$condition);
-					if($res){
-						$next_step_name_id=$res[0]['work_seteps_id'];
-					}
-					else{
-						// $next_sub_process_id=$this->Audit_model->getNewIDorNo('sp','tbl_data_required');
-						$tbl_data=array('steps_name'=>$value,'status'=>0,'sub_process_id'=>$next_sub_process_id);
-						$this->Audit_model->insertData('tbl_work_steps',$tbl_data);
-					}
-
-				}
-				////////////////////////////////
-				// $stepName=$this->get_data_by_filter($data['0'],$value,'scope');
-				$risk_name=$this->get_all_unique($data_required,'step_name');
-				print_r($risk_name);
-				foreach($risk_name as $key=>$value){
-					$condition=array('risk_name'=>$value,'sub_process_id'=>$next_sub_process_id);
-					$next_step_name_id=0;
-					$res=$this->Audit_model->select_table_Where_data('tbl_risk',$condition);
-					if($res){
-						$next_step_name_id=$res[0]['risk_id'];
-					}
-					else{
-						// $next_sub_process_id=$this->Audit_model->getNewIDorNo('sp','tbl_data_required');
-						$tbl_data=array('risk_name'=>$value,'sub_process_id'=>$next_sub_process_id);
-						$this->Audit_model->insertData('tbl_risk',$tbl_data);
-					}
-
-				}
-
-
-			}
-			
 		}
-		
+		if ($count > 0) {
+			$this->session->set_flashdata('error',  $count . "Row has no process name, so it's not entered");
+			redirect(__CLASS__);
+		} else {
+			$this->session->set_flashdata('success', "Uploded Successfully");
+			redirect(__CLASS__);
+		}
 	}
 
-	private function get_all_unique($data,$column_name){
-		$unique_columns=array_unique(array_column($data,$column_name));
+	private function get_all_unique($data, $column_name)
+	{
+		$unique_columns = array_unique(array_column($data, $column_name));
 		return $unique_columns;
 	}
-	private function get_data_by_filter($data,$process,$col_name){
-		$data=$filter = array_filter($data, array(new Filter($col_name,$process), "filter_callback"));
+	private function get_data_by_filter($data, $process, $col_name)
+	{
+		$data = array_filter($data, array(new Filter($col_name, $process), "filter_callback"));
+		return $data;
+	}
+	private function get_data_by_multiple_column_filter($data, $values, $col_names)
+	{
+		$data = array_filter($data, array(new Filter($col_names, $values), "filter_callback_array"));
 		return $data;
 	}
 	private function excel_data($arr_data)
