@@ -35,6 +35,12 @@ class Audit_model extends CI_Model{
 
         return $Id; // $maxid==NULL?1:$maxid+1;
     }
+    public function select_table_Where_data($tableName,$condition){
+        $this->db->where($condition);
+        $q=$this->db->get($tableName)->result_array();
+        return $q;
+
+    }
 }
 
 ?>
