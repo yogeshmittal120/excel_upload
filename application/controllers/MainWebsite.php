@@ -60,7 +60,6 @@ class MainWebsite extends CI_Controller
 
 		//extract to a PHP readable array format
 		foreach ($objPHPExcel->getWorksheetIterator() as $key => $worksheet) {
-
 			$cell_collection = $worksheet->getCellCollection();
 			for ($i = 0; $i < count($cell_collection); $i++) {
 				$column = $worksheet->getCell($cell_collection[$i])->getColumn();
@@ -72,13 +71,14 @@ class MainWebsite extends CI_Controller
 		}
 
 		$data = $this->excel_data($arr_data);
-
+		// print_r($data);
+		// die;
 		// get all unique processes
 		$processes = $this->get_all_unique($data[0], 'process');
-
+		$count = 0;
 		// iterate processes
 		foreach ($processes as $key => $value) {
-			$count = 0;
+			
 			if (!empty($value)) {
 				// find process exist or not
 				$res = $this->Audit_model->find_process_id('tbl_process', 'process_name', $value);
@@ -93,39 +93,51 @@ class MainWebsite extends CI_Controller
 					$tbl_data = array('process_name' => $value, 'status' => 0, 'process_id' => $next_id);
 					$this->Audit_model->insertData('tbl_process', $tbl_data);
 				}
+			
 
-				///////////////scope/////////////////////////////
-				// find scopes for each process
-				$scope = $this->get_data_by_filter($data['0'], $value, 'process');
-				// find unique scope
-				$unique_scope = $this->get_all_unique($scope, 'scope');
-				// iterate scope
-				foreach ($unique_scope as $key => $sc) {
-					// make a condition array
-					$condition = array('sub_process_name' => $sc, 'process_id' => $next_id);
-					$next_sub_process_id = 0;
-					// check the data exist already or not 
-					$res = $this->Audit_model->select_table_Where_data('tbl_sub_process', $condition);
+				///////////////sub_process/////////////////////////////
 
-					if ($res) {
-						// if added then save id
-						$next_sub_process_id = $res[0]['sub_process_id'];
-					} else {
-						// otherwise add new scope
-						$next_sub_process_id = $this->Audit_model->getNewIDorNo('sp', 'tbl_sub_process');
-						$tbl_data = array('sub_process_name' => $sc, 'status' => 0, 'process_id' => $next_id, 'sub_process_id' => $next_sub_process_id);
-						$this->Audit_model->insertData('tbl_sub_process', $tbl_data);
+				// find sub_processs for each process
+				$sub_process = $this->get_data_by_filter($data['0'], $value, 'process');
+				// find unique sub_process
+				$unique_sub_process = $this->get_all_unique($sub_process, 'sub_process');
+				
+				// iterate sub_process
+				foreach ($unique_sub_process as $key => $sc) {
+					if (!empty($sc)) {
+						// make a condition array
+						$condition = array('sub_process_name' => $sc, 'process_id' => $next_id);
+						$next_sub_process_id = 0;
+						// check the data exist already or not 
+						$res = $this->Audit_model->select_table_Where_data('tbl_sub_process', $condition);
+
+						if ($res) {
+							// if added then save id
+							$next_sub_process_id = $res[0]['sub_process_id'];
+						} else {
+							
+								// otherwise add new sub_process
+								$next_sub_process_id = $this->Audit_model->getNewIDorNo('sp', 'tbl_sub_process');
+								$tbl_data = array('sub_process_name' => $sc, 'status' => 0, 'process_id' => $next_id, 'sub_process_id' => $next_sub_process_id);
+								$this->Audit_model->insertData('tbl_sub_process', $tbl_data);
+							} 
 					}
-
+					else {
+						$next_sub_process_id=$next_id;
+						$count++;
+					}
+				
 
 					/////////////////Data Required/////////////////
-					// filter those records which mach with process and scope
-					$Data_required = $this->get_data_by_multiple_column_filter($data['0'], [$value, $sc], ['process', 'scope']);
+					
+					// filter those records which mach with process and sub_process
+					$Data_required = $this->get_data_by_multiple_column_filter($data['0'], [$value, $sc], ['process', 'sub_process']);
 
 					// find unique records of data required		
 					$Data_required = $this->get_all_unique($Data_required, 'Data_required');
 					// iterate unique records
 					foreach ($Data_required as $key => $dr) {
+						if (!empty($dr)) {
 						// make a condition array
 						$condition = array('data_required' => $dr, 'sub_process_id' => $next_sub_process_id);
 						// check the data exist already or not 
@@ -134,19 +146,26 @@ class MainWebsite extends CI_Controller
 							// if added then save id
 							$next_Data_required_id = $res[0]['id'];
 						} else {
-							// otherwise add new data required
-							$tbl_data = array('data_required' => $dr, 'status' => 0, 'sub_process_id' => $next_sub_process_id);
-							$this->Audit_model->insertData('tbl_data_required', $tbl_data);
+							
+								// otherwise add new data required
+								$tbl_data = array('data_required' => $dr, 'status' => 0, 'sub_process_id' => $next_sub_process_id);
+								$this->Audit_model->insertData('tbl_data_required', $tbl_data);
+							
 						}
+					} else {
+						$count++;
 					}
+				}
 
 					//////////////////work steps//////////////
-					// filter those records which mach with process and scope
-					$workSteps = $this->get_data_by_multiple_column_filter($data['0'], [$value, $sc], ['process', 'scope']);
+
+					// filter those records which mach with process and sub_process
+					$workSteps = $this->get_data_by_multiple_column_filter($data['0'], [$value, $sc], ['process', 'sub_process']);
 					// find unique records of work step name	
 					$step_name = $this->get_all_unique($workSteps, 'step_name');
 					// iterate unique records
 					foreach ($step_name as $key => $sn) {
+						if (!empty($sn)) {
 						// make a condition array
 						$condition = array('steps_name' => $sn, 'sub_process_id' => $next_sub_process_id);
 						// check the data exist already or not
@@ -155,41 +174,57 @@ class MainWebsite extends CI_Controller
 							// if added then save id
 							$next_step_name_id = $res[0]['work_seteps_id'];
 						} else {
+							
 							// otherwise add new data required
 							$tbl_data = array('steps_name' => $sn, 'status' => 0, 'sub_process_id' => $next_sub_process_id);
 							$this->Audit_model->insertData('tbl_work_steps', $tbl_data);
+							
 						}
+					}
+					else{
+						$count++;
+					}
 					}
 
 					///////////////////Risk /////////////
 
-					// filter those records which mach with process and scope
-					$risk = $this->get_data_by_multiple_column_filter($data['0'], [$value, $sc], ['process', 'scope']);
+					// filter those records which mach with process and sub_process
+					$risk = $this->get_data_by_multiple_column_filter($data['0'], [$value, $sc], ['process', 'sub_process']);
 					// find unique records of work step name
 					$risk_name = $this->get_all_unique($risk, 'risk_name');
 					// iterate unique records
 					foreach ($risk_name as $key => $rn) {
-						// make a condition array
-						$condition = array('risk_name' => $rn, 'sub_process_id' => $next_sub_process_id);
-						// check the data exist already or not
-						$res = $this->Audit_model->select_table_Where_data('tbl_risk', $condition);
+						if (!empty($rn)) {
+							// make a condition array
+							$condition = array('risk_name' => $rn, 'sub_process_id' => $next_sub_process_id);
+							// check the data exist already or not
+							$res = $this->Audit_model->select_table_Where_data('tbl_risk', $condition);
 
-						if ($res) {
-							// if added then save id
-							$next_step_name_id = $res[0]['risk_id'];
-						} else {
-							// otherwise add new data required
-							$tbl_data = array('risk_name' => $rn, 'sub_process_id' => $next_sub_process_id);
-							$this->Audit_model->insertData('tbl_risk', $tbl_data);
+							if ($res) {
+								// if added then save id
+								$next_step_name_id = $res[0]['risk_id'];
+							} 
+							else {
+								
+								// otherwise add new data required
+								$tbl_data = array('risk_name' => $rn, 'sub_process_id' => $next_sub_process_id);
+								$this->Audit_model->insertData('tbl_risk', $tbl_data);	
+							}
+						}
+						else{ 
+
+						$count++; 
+
 						}
 					}
 				}
-			} else {
-				$count++;
-			}
+			}else {
+					$count++;
+				}	
 		}
+
 		if ($count > 0) {
-			$this->session->set_flashdata('error',  $count . "Row has no process name, so it's not entered");
+			$this->session->set_flashdata('error',  " There are ". $count . " empty cell, so that data not entered");
 			redirect(__CLASS__);
 		} else {
 			$this->session->set_flashdata('success', "Uploded Successfully");
