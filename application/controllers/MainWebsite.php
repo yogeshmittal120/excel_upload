@@ -71,8 +71,6 @@ class MainWebsite extends CI_Controller
 		}
 
 		$data = $this->excel_data($arr_data);
-		// print_r($data);
-		// die;
 		// get all unique processes
 		$processes = $this->get_all_unique($data[0], 'process');
 		$count = 0;
@@ -157,7 +155,7 @@ class MainWebsite extends CI_Controller
 					}
 				}
 
-					//////////////////work steps//////////////
+					////////////////// work steps //////////////
 
 					// filter those records which mach with process and sub_process
 					$workSteps = $this->get_data_by_multiple_column_filter($data['0'], [$value, $sc], ['process', 'sub_process']);
